@@ -42,7 +42,7 @@ const apBtn  = document.getElementById('autoplayBtn');
 const WIN_DEFLECTIONS = 500;
 const MAX_LEVEL       = 100;
 const SHOP_EVERY      = 5;     // shop every N levels
-const SPEED_SCALE     = 9.0;   // global meteor speed multiplier
+const SPEED_SCALE     = 4.0;   // global meteor speed multiplier
 
 // ── UPGRADES (14 total) ───────────────────────────────────────────────
 const UPGRADES = [
@@ -157,8 +157,8 @@ const gs = {
     meteorMult:1,
   },
 
-  // boughtU / boughtD: {id -> count} maps — same item can be stacked multiple times
   shop:{ boughtU:{}, boughtD:{}, funds:0, clicks:[] },
+  purchasedUpgrades: new Set(), // tracks upgrades bought in ANY shop — can't re-buy ever
 
   autoplay:false,
   ai:{targetAngle:0, reactionTimer:0, pendingTarget:0, angleError:0},
@@ -249,6 +249,7 @@ function initGame() {
     voidFreq:1, twinDeflect:false, maxHpBonus:0, meteorMult:1,
   };
   gs.shop = {boughtU:{},boughtD:{},funds:0,clicks:[]};
+  gs.purchasedUpgrades = new Set();
   initLevel(1);
 }
 
@@ -522,11 +523,12 @@ function handleShopClick(e){
   for(const c of gs.shop.clicks) if(mx>=c.x&&mx<=c.x+c.w&&my>=c.y&&my<=c.y+c.h){c.fn();break;}
 }
 function buyUpg(upg){
+  if(gs.purchasedUpgrades.has(upg.id))return; // already bought in a previous shop
   if(gs.shop.funds<upg.cost)return;
   gs.shop.funds-=upg.cost; gs.score-=upg.cost;
   gs.shop.boughtU[upg.id]=(gs.shop.boughtU[upg.id]||0)+1;
+  gs.purchasedUpgrades.add(upg.id); // mark as permanently bought
   upg.apply(gs.mods);
-  // maxHp upgrade: boost health pool each stack
   if(upg.id==='maxHp'){gs.maxHealth+=25;gs.planetHealth=Math.min(gs.maxHealth,gs.planetHealth+10);}
 }
 function buyDeb(deb){
@@ -748,26 +750,24 @@ function drawShop(W,H){
 
   for(const upg of UPGRADES){
     if(uy+ch>py+ph-70)break;
-    const stackCount=gs.shop.boughtU[upg.id]||0;
-    const afford=gs.shop.funds>=upg.cost;
-    // Colour: green tint if stacked, blue if affordable, dark if not
-    ctx.fillStyle=stackCount>0?(afford?'rgba(0,70,35,0.85)':'rgba(0,50,25,0.7)'):afford?'rgba(0,22,50,0.85)':'rgba(6,6,6,0.75)';
+    const alreadyOwned=gs.purchasedUpgrades.has(upg.id);
+    const afford=!alreadyOwned&&gs.shop.funds>=upg.cost;
+    // Grey if owned, green tint if bought this session, blue if affordable
+    ctx.fillStyle=alreadyOwned?'rgba(20,20,20,0.7)':afford?'rgba(0,22,50,0.85)':'rgba(6,6,6,0.75)';
     rrect(c1,uy,colW,ch,6);ctx.fill();
-    ctx.strokeStyle=stackCount>0?'#4f4':'#0cf3';ctx.lineWidth=afford?1.5:0.5;rrect(c1,uy,colW,ch,6);ctx.stroke();
-    ctx.fillStyle=afford?'#0ff':'#444';ctx.font='bold 10px Courier New';ctx.textAlign='left';
+    ctx.strokeStyle=alreadyOwned?'#333':'#0cf3';ctx.lineWidth=alreadyOwned?0.5:1.5;rrect(c1,uy,colW,ch,6);ctx.stroke();
+    ctx.fillStyle=alreadyOwned?'#444':afford?'#0ff':'#444';ctx.font='bold 10px Courier New';ctx.textAlign='left';
     ctx.fillText(upg.name,c1+7,uy+15);
     ctx.fillStyle='#667';ctx.font='9px Courier New';ctx.fillText(upg.desc,c1+7,uy+28);
-    // Right side: cost + stack badge
     ctx.textAlign='right';
-    ctx.fillStyle=afford?'#ffe066':'#555';ctx.font='bold 9px Courier New';
-    ctx.fillText(`${upg.cost}pts`,c1+colW-7,uy+15);
-    if(stackCount>0){
-      // Stack count badge
-      ctx.fillStyle='#4f4';ctx.font='bold 9px Courier New';
-      ctx.fillText(`×${stackCount} owned`,c1+colW-7,uy+28);
+    if(alreadyOwned){
+      ctx.fillStyle='#555';ctx.font='bold 9px Courier New';
+      ctx.fillText('OWNED',c1+colW-7,uy+15);
+    } else {
+      ctx.fillStyle=afford?'#ffe066':'#555';ctx.font='bold 9px Courier New';
+      ctx.fillText(`${upg.cost}pts`,c1+colW-7,uy+15);
+      if(afford)gs.shop.clicks.push({x:c1,y:uy,w:colW,h:ch,fn:()=>buyUpg(upg)});
     }
-    // Always clickable as long as affordable
-    if(afford)gs.shop.clicks.push({x:c1,y:uy,w:colW,h:ch,fn:()=>buyUpg(upg)});
     uy+=ch+4;
   }
 
